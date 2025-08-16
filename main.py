@@ -1,14 +1,14 @@
 import os
-import time
 import google.auth
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+from google.cloud import resourcemanager_v3, service_usage_v1, api_keys_v2
+from google.api_core import exceptions as google_exceptions
+from google.oauth2 import id_token
+from google.auth.transport import requests
 
 SCOPES = [
     "https://www.googleapis.com/auth/cloud-platform",
-    "https://www.googleapis.com/auth/service.management",
     "https://www.googleapis.com/auth/userinfo.email",
     "openid"
 ]
@@ -34,68 +34,65 @@ def main():
         if not email:
             return
 
-        resource_manager = build("cloudresourcemanager", "v1", credentials=creds)
-        projects = resource_manager.projects().list().execute()
+        resource_manager = resourcemanager_v3.ProjectsClient(credentials=creds)
+        projects = resource_manager.search_projects()
 
         print("Processing projects...")
-        for project in projects.get("projects", []):
-            project_id = project['projectId']
+        for project in projects:
+            project_id = project.project_id
             print(f"- {project_id}")
             enable_api(project_id, creds)
             key = create_api_key(project_id, creds)
             if key:
-                save_api_key(email, key["keyString"])
+                save_api_key(email, key.key_string)
 
-    except HttpError as err:
+    except google_exceptions.GoogleAPICallError as err:
         print(err)
 
 
 def get_user_email(credentials):
     try:
-        userinfo = build("oauth2", "v2", credentials=credentials)
-        return userinfo.userinfo().get().execute()["email"]
-    except HttpError as err:
+        request = requests.Request()
+        id_info = id_token.verify_oauth2_token(
+            credentials.id_token, request, clock_skew_in_seconds=3
+        )
+        return id_info["email"]
+    except ValueError as err:
         print(f"Error getting user email: {err}")
         return None
 
 
 def enable_api(project_id, credentials):
     try:
-        service_usage = build("serviceusage", "v1", credentials=credentials)
+        service_usage_client = service_usage_v1.ServiceUsageClient(credentials=credentials)
         service_name = "generativelanguage.googleapis.com"
-        service_usage.services().enable(
+        request = service_usage_v1.EnableServiceRequest(
             name=f"projects/{project_id}/services/{service_name}"
-        ).execute()
+        )
+        operation = service_usage_client.enable_service(request=request)
+        # Wait for the operation to complete
+        operation.result()
         print(f"Enabled Generative Language API for project {project_id}")
-    except HttpError as err:
+    except google_exceptions.GoogleAPICallError as err:
         print(f"Error enabling API for project {project_id}: {err}")
 
 
 def create_api_key(project_id, credentials):
     try:
-        service = build("apikeys", "v2", credentials=credentials)
-        key = {
-            "displayName": "Gemini API Key"
-        }
-        request = (
-            service.projects()
-            .locations()
-            .keys()
-            .create(parent=f"projects/{project_id}/locations/global", body=key)
+        api_keys_client = api_keys_v2.ApiKeysClient(credentials=credentials)
+        key = api_keys_v2.Key(
+            display_name="Gemini API Key"
         )
-        operation = request.execute()
-        op_name = operation["name"]
-
-        op_service = service.operations()
-        while True:
-            op_request = op_service.get(name=op_name)
-            op_response = op_request.execute()
-            if op_response.get("done"):
-                if op_response.get("error"):
-                    raise Exception(f"GCP key creation failed: {op_response['error']}")
-                print(f"Created API key for project {project_id}")
-                return op_response["response"]
-    except HttpError as err:
+        request = api_keys_v2.CreateKeyRequest(
+            parent=f"projects/{project_id}/locations/global",
+            key=key,
+        )
+        operation = api_keys_client.create_key(request=request)
+        # Wait for the operation to complete
+        result = operation.result()
+        print(f"Created API key for project {project_id}")
+        return result
+    except google_exceptions.GoogleAPICallError as err:
         print(f"Error creating API key for project {project_id}: {err}")
         return None
 
