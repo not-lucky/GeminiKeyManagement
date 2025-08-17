@@ -24,7 +24,7 @@ def load_emails_from_file(filename):
         print("Please create it and add one email address per line.")
         return []
     with open(filename, "r") as f:
-        return [line.strip() for line in f if line.strip()]
+        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
 def main():
     """Main function to orchestrate API key creation."""

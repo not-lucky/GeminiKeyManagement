@@ -10,3 +10,4 @@ credentials/
 credentials.json
 *.key
 emails.txt
+*.keys.txt
