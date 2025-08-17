@@ -1,3 +1,12 @@
+# Virtual Environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Credentials and Secrets
 credentials/
+credentials.json
 *.key
-*.json
+emails.txt
