@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+import re
 import google.auth
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -27,6 +28,18 @@ def load_emails_from_file(filename):
     with open(filename, "r") as f:
         # Ignore empty lines and lines starting with #
         return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+
+def load_existing_api_keys(email):
+    """Loads API keys from the user's key file."""
+    filename = f"{email}.keys.txt"
+    keys = set()
+    if os.path.exists(filename):
+        with open(filename, "r") as f:
+            content = f.read()
+            # Find all occurrences of "Key: <key_string>"
+            found_keys = re.findall(r"Key:\s*(.+)", content)
+            keys.update(found_keys)
+    return keys
 
 def main():
     """Main function to orchestrate API key creation or deletion."""
@@ -66,6 +79,13 @@ def process_account(email, action):
         print(f"Could not get credentials for {email}. Skipping.")
         return
 
+    # Load existing keys if we are creating
+    existing_keys = set()
+    if action == 'create':
+        existing_keys = load_existing_api_keys(email)
+        if existing_keys:
+            print(f"Loaded {len(existing_keys)} existing keys from file.")
+
     try:
         resource_manager = resourcemanager_v3.ProjectsClient(credentials=creds)
         projects = list(resource_manager.search_projects())
@@ -80,6 +100,11 @@ def process_account(email, action):
             print(f"- Project: {project_id}")
 
             if action == 'create':
+                # Check if a key with the specific display name already exists
+                if project_has_gemini_key(project_id, creds):
+                    print("  'Gemini API Key' already exists in this project. Skipping creation.")
+                    continue
+
                 if enable_api(project_id, creds):
                     key = create_api_key(project_id, creds)
                     if key:
@@ -92,6 +117,20 @@ def process_account(email, action):
         print(f"  Error: {err}")
     except google_exceptions.GoogleAPICallError as err:
         print(f"An API error occurred while processing account {email}: {err}")
+
+def project_has_gemini_key(project_id, credentials):
+    """Checks if a project already has a key named 'Gemini API Key'."""
+    try:
+        api_keys_client = api_keys_v2.ApiKeysClient(credentials=credentials)
+        parent = f"projects/{project_id}/locations/global"
+        keys = api_keys_client.list_keys(parent=parent)
+        for key in keys:
+            if key.display_name == "Gemini API Key":
+                return True
+        return False
+    except google_exceptions.GoogleAPICallError as err:
+        print(f"  Could not list keys in project {project_id}. Assuming no key exists. Error: {err}")
+        return False
 
 
 def get_credentials_for_email(email):
