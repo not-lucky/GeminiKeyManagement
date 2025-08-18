@@ -1,6 +1,6 @@
 # Gemini Key Management
 
-This script automates the process of creating Google Cloud API keys for the Generative Language API (Gemini) across multiple Google Cloud projects.
+This script automates the process of creating and deleting Google Cloud API keys for the Generative Language API (Gemini) across multiple Google Cloud projects.
 
 ## Prerequisites
 
@@ -20,19 +20,26 @@ This script automates the process of creating Google Cloud API keys for the Gene
     ```bash
     pip install -r requirements.txt
     ```
-    *(Note: A `requirements.txt` file will be generated in a later step)*
 
-3.  **Create `emails.txt` file:**
+3.  **Create `emails.txt` file (for creating keys in bulk):**
     - Create a file named `emails.txt` in the root of the project.
-    - Add the email addresses of the Google accounts you want to process, one email per line.
+    - Add the email addresses of the Google accounts you want to process, one email per line. You can add comments with `#`.
 
 ## Usage
 
-Run the script from your terminal:
+Run the script from your terminal with a specified action (`create` or `delete`).
 
-```bash
-python main.py
-```
+### Creating API Keys
+
+-   **For all users in `emails.txt`:**
+    ```bash
+    python main.py create
+    ```
+
+-   **For a single user:**
+    ```bash
+    python main.py create --email your.email@example.com
+    ```
 
 The first time you run the script for a new email address, you will be prompted to authenticate with your Google account in your web browser. A token file will be saved in the `credentials` directory for future runs.
 
@@ -40,4 +47,14 @@ The script will then:
 - Find all Google Cloud projects accessible by the authenticated user.
 - Enable the `generativelanguage.googleapis.com` API for each project.
 - Create a new API key named "Gemini API Key" with restrictions to the Generative Language API.
-- Save the API key to a file named `<email>.key`.
+- Save the API key(s) to a file named `<email>.keys.txt`.
+
+### Deleting API Keys
+
+To delete all API keys with the display name "Gemini API Key" for a specific user, run:
+
+```bash
+python main.py delete --email your.email@example.com
+```
+
+This will iterate through all projects accessible by that user and remove the matching keys.
