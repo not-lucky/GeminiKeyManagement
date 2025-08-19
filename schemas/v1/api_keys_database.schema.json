@@ -1,0 +1,140 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Gemini API Keys Database Schema",
+  "description": "Schema for the api_keys_database.json file.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "generation_timestamp_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "accounts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Account"
+      }
+    }
+  },
+  "definitions": {
+    "Account": {
+      "type": "object",
+      "properties": {
+        "account_details": {
+          "type": "object",
+          "properties": {
+            "email": {
+              "type": "string",
+              "format": "email"
+            },
+            "authentication_details": {
+              "type": "object",
+              "properties": {
+                "token_file": {
+                  "type": "string"
+                },
+                "scopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Project"
+          }
+        }
+      }
+    },
+    "Project": {
+      "type": "object",
+      "properties": {
+        "project_info": {
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string"
+            },
+            "project_name": {
+              "type": "string"
+            },
+            "project_number": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            }
+          }
+        },
+        "api_keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ApiKey"
+          }
+        }
+      }
+    },
+    "ApiKey": {
+      "type": "object",
+      "properties": {
+        "key_details": {
+          "type": "object",
+          "properties": {
+            "key_string": {
+              "type": "string"
+            },
+            "key_id": {
+              "type": "string"
+            },
+            "key_name": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "creation_timestamp_utc": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "last_updated_timestamp_utc": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "restrictions": {
+          "type": "object",
+          "properties": {
+            "api_targets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "service": {
+                    "type": "string"
+                  },
+                  "methods": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "state": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
