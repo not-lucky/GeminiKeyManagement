@@ -11,6 +11,10 @@
       "type": "string",
       "format": "date-time"
     },
+    "last_modified_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
     "accounts": {
       "type": "array",
       "items": {

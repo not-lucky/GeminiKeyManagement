@@ -11,3 +11,4 @@ credentials.json
 *.key
 emails.txt
 *.keys.txt
+api_keys_database.json

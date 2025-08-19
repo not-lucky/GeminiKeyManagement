@@ -29,6 +29,15 @@ This script automates the process of creating and deleting Google Cloud API keys
 
 Run the script from your terminal with a specified action (`create` or `delete`).
 
+### Dry Run
+
+You can simulate any action without making real changes by adding the `--dry-run` flag. This is useful for testing and verifying the script's behavior.
+
+```bash
+python main.py create --dry-run
+python main.py delete --email your.email@example.com --dry-run
+```
+
 ### Creating API Keys
 
 -   **For all users in `emails.txt`:**
@@ -47,14 +56,15 @@ The script will then:
 - Find all Google Cloud projects accessible by the authenticated user.
 - Enable the `generativelanguage.googleapis.com` API for each project.
 - Create a new API key named "Gemini API Key" with restrictions to the Generative Language API.
-- Save the API key(s) to a file named `<email>.keys.txt`.
+- Save the API key(s) to a central `api_keys_database.json` file.
 
 ### Deleting API Keys
 
-To delete all API keys with the display name "Gemini API Key" for a specific user, run:
+To delete all API keys with the display name "Gemini API Key" for a specific user, the `--email` argument is required:
 
 ```bash
 python main.py delete --email your.email@example.com
 ```
 
 This will iterate through all projects accessible by that user and remove the matching keys.
+
