@@ -18,14 +18,42 @@ EMAILS_FILE = "emails.txt"
 CLIENT_SECRETS_FILE = "credentials.json"
 API_KEYS_DATABASE_FILE = "api_keys_database.json"
 API_KEYS_SCHEMA_FILE = os.path.join("schemas", "v1", "api_keys_database.schema.json")
+LOG_DIR = "logs"
 # ---------------------
 
 # --- LOGGING SETUP ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    stream=sys.stdout,
-)
+def setup_logging():
+    """Sets up logging to both console and a file."""
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR)
+
+    log_filename = f"gemini_key_management_{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H-%M-%S')}.log"
+    log_filepath = os.path.join(LOG_DIR, log_filename)
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Clear existing handlers
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    # File handler for detailed logging
+    file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
+    file_formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - [%(name)s:%(module)s:%(lineno)d] - %(message)s"
+    )
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+
+    # Console handler for concise logging
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+
+    logging.info(f"Logging initialized. Log file: {log_filepath}")
+
+setup_logging()
 # ---------------------
 
 
