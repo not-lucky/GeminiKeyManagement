@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 import jsonschema
 import google.auth
+from colorama import Fore, Style, init
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.cloud import resourcemanager_v3, service_usage_v1, api_keys_v2
@@ -22,8 +23,35 @@ LOG_DIR = "logs"
 # ---------------------
 
 # --- LOGGING SETUP ---
+class ColoredFormatter(logging.Formatter):
+    """A custom logging formatter that adds color to console output."""
+
+    LOG_COLORS = {
+        logging.DEBUG: Fore.CYAN,
+        logging.INFO: Fore.GREEN,
+        logging.WARNING: Fore.YELLOW,
+        logging.ERROR: Fore.RED,
+        logging.CRITICAL: Fore.RED + Style.BRIGHT,
+    }
+
+    def format(self, record):
+        """Formats the log record with appropriate colors."""
+        color = self.LOG_COLORS.get(record.levelno)
+        message = super().format(record)
+        if color:
+            # Only color the message part for readability
+            parts = message.split(" - ", 2)
+            if len(parts) > 2:
+                parts[2] = color + parts[2] + Style.RESET_ALL
+                message = " - ".join(parts)
+            else:
+                message = color + message + Style.RESET_ALL
+        return message
+
 def setup_logging():
-    """Sets up logging to both console and a file."""
+    """Sets up logging to both console and a file, with colors for the console."""
+    init(autoreset=True) # Initialize Colorama
+
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
 
@@ -33,11 +61,11 @@ def setup_logging():
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    # Clear existing handlers
+    # Clear existing handlers to avoid duplicate logs
     if logger.hasHandlers():
         logger.handlers.clear()
 
-    # File handler for detailed logging
+    # File handler for detailed, non-colored logging
     file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
     file_formatter = logging.Formatter(
         "%(asctime)s - %(levelname)s - [%(name)s:%(module)s:%(lineno)d] - %(message)s"
@@ -45,9 +73,9 @@ def setup_logging():
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
 
-    # Console handler for concise logging
+    # Console handler for concise, colored logging
     console_handler = logging.StreamHandler(sys.stdout)
-    console_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    console_formatter = ColoredFormatter("%(asctime)s - %(levelname)s - %(message)s")
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
