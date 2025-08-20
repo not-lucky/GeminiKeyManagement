@@ -3,6 +3,8 @@ import sys
 import argparse
 import json
 import logging
+import threading
+import concurrent.futures
 from datetime import datetime, timezone
 import jsonschema
 import google.auth
@@ -190,7 +192,30 @@ def main():
     if not args.dry_run:
         save_keys_to_json(api_keys_data, API_KEYS_DATABASE_FILE, schema)
 
-def process_account(email, action, api_keys_data, dry_run=False):
+def process_project_for_action(project, creds, action, dry_run, db_lock, account_entry):
+    """Processes a single project for the given action in a thread-safe manner."""
+    project_id = project.project_id
+    logging.info(f"- Starting to process project: {project_id} ({project.display_name})")
+
+    if action == 'create':
+        if project_has_gemini_key(project_id, creds):
+            logging.info(f"  'Gemini API Key' already exists in project {project_id}. Skipping creation.")
+            return
+
+        if enable_api(project_id, creds, dry_run=dry_run):
+            key_object = create_api_key(project_id, creds, dry_run=dry_run)
+            if key_object:
+                with db_lock:
+                    add_key_to_database(account_entry, project, key_object)
+    elif action == 'delete':
+        deleted_keys_uids = delete_api_keys(project_id, creds, dry_run=dry_run)
+        if deleted_keys_uids:
+            with db_lock:
+                remove_keys_from_database(account_entry, project_id, deleted_keys_uids)
+    logging.info(f"- Finished processing project: {project_id}")
+
+
+def process_account(email, action, api_keys_data, dry_run=False, max_workers=5):
     """Processes a single account for the given action."""
     logging.info(f"--- Processing account: {email} for action: {action} ---")
     if dry_run:
@@ -223,24 +248,21 @@ def process_account(email, action, api_keys_data, dry_run=False):
             logging.info(f"No projects found for {email}.")
             return
 
-        logging.info(f"Found {len(projects)} projects. Processing...")
-        for project in projects:
-            project_id = project.project_id
-            logging.info(f"- Project: {project_id} ({project.display_name})")
+        logging.info(f"Found {len(projects)} projects. Processing with up to {max_workers} workers...")
+        
+        db_lock = threading.Lock()
 
-            if action == 'create':
-                if project_has_gemini_key(project_id, creds):
-                    logging.info("  'Gemini API Key' already exists in this project. Skipping creation.")
-                    continue
-
-                if enable_api(project_id, creds, dry_run=dry_run):
-                    key_object = create_api_key(project_id, creds, dry_run=dry_run)
-                    if key_object:
-                        add_key_to_database(account_entry, project, key_object)
-            elif action == 'delete':
-                deleted_keys_uids = delete_api_keys(project_id, creds, dry_run=dry_run)
-                if deleted_keys_uids:
-                    remove_keys_from_database(account_entry, project_id, deleted_keys_uids)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_project = {
+                executor.submit(process_project_for_action, project, creds, action, dry_run, db_lock, account_entry): project
+                for project in projects
+            }
+            for future in concurrent.futures.as_completed(future_to_project):
+                project = future_to_project[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    logging.error(f"Project {project.project_id} generated an exception: {exc}", exc_info=True)
 
     except google_exceptions.PermissionDenied as err:
         logging.error(f"Permission denied for account {email}. Check IAM roles.")
@@ -315,7 +337,7 @@ def project_has_gemini_key(project_id, credentials):
         parent = f"projects/{project_id}/locations/global"
         keys = api_keys_client.list_keys(parent=parent)
         for key in keys:
-            if key.display_name == "Gemini API Key":
+            if key.display_name in ["Gemini API Key", "Generative Language API Key"]: # 2nd name if when api created using AI studio
                 return True
         return False
     except google_exceptions.GoogleAPICallError as err:

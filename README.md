@@ -73,6 +73,12 @@ To create Gemini API keys for all users listed in `emails.txt`:
 uv run main.py create
 ```
 
+You can control the number of projects processed concurrently using the `--max-workers` flag (defaults to 5):
+
+```bash
+uv run main.py create --max-workers 10
+```
+
 The first time you run this for a particular user, a browser window will open, and you will be prompted to log in and grant permission. After successful authentication, an access token will be saved in the `credentials/` directory, and subsequent runs will not require manual intervention (unless the token expires or is revoked).
 
 ### Deleting API Keys
