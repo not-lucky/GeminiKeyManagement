@@ -12,3 +12,4 @@ credentials.json
 emails.txt
 *.keys.txt
 api_keys_database.json
+logs/
