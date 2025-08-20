@@ -160,6 +160,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Simulate the run without making any actual changes to Google Cloud resources.")
     args = parser.parse_args()
 
+    logging.info(f"Program arguments: {vars(args)}")
+
     if args.action == 'delete' and not args.email:
         parser.error("the --email argument is required for the 'delete' action")
 
@@ -192,13 +194,116 @@ def main():
     if not args.dry_run:
         save_keys_to_json(api_keys_data, API_KEYS_DATABASE_FILE, schema)
 
+def sync_project_keys(project, creds, dry_run, db_lock, account_entry):
+    """Synchronizes API keys between Google Cloud and the local database for a single project.
+    Returns True if a Gemini API key exists in the project, False otherwise."""
+    
+    # Helper class to create a mock key object compatible with add_key_to_database
+    class TempKey:
+        def __init__(self, cloud_key, key_string):
+            self.key_string = key_string
+            self.uid = cloud_key.uid
+            self.name = cloud_key.name
+            self.display_name = cloud_key.display_name
+            self.create_time = cloud_key.create_time
+            self.update_time = cloud_key.update_time
+            self.restrictions = cloud_key.restrictions
+
+    project_id = project.project_id
+    logging.info(f"  Synchronizing keys for project {project_id}")
+    gemini_key_exists = False
+
+    try:
+        api_keys_client = api_keys_v2.ApiKeysClient(credentials=creds)
+        parent = f"projects/{project_id}/locations/global"
+        
+        # 1. Fetch cloud keys
+        cloud_keys_list = list(api_keys_client.list_keys(parent=parent))
+        for key in cloud_keys_list:
+            if key.display_name in ["Gemini API Key", "Generative Language API Key"]:
+                gemini_key_exists = True
+        
+        cloud_keys = {key.uid: key for key in cloud_keys_list}
+        
+        # 2. Fetch local keys
+        project_entry = next((p for p in account_entry["projects"] if p.get("project_info", {}).get("project_id") == project_id), None)
+        
+        if not project_entry:
+            # If project is not in DB, create it.
+            project_entry = {
+                "project_info": {
+                    "project_id": project.project_id,
+                    "project_name": project.display_name,
+                    "project_number": project.name.split('/')[-1],
+                    "state": str(project.state)
+                },
+                "api_keys": []
+            }
+            with db_lock:
+                account_entry["projects"].append(project_entry)
+        
+        local_keys = {key['key_details']['key_id']: key for key in project_entry.get('api_keys', [])}
+
+        # 3. Reconcile
+        cloud_uids = set(cloud_keys.keys())
+        local_uids = set(local_keys.keys())
+
+        synced_uids = cloud_uids.intersection(local_uids)
+        cloud_only_uids = cloud_uids - local_uids
+        local_only_uids = local_uids - cloud_uids
+
+        # 4. Process
+        for uid in synced_uids:
+            logging.info(f"    Key {uid} is synchronized.")
+
+        for uid in cloud_only_uids:
+            key_object = cloud_keys[uid]
+            logging.info(f"    Key {uid} ({key_object.display_name}) found in cloud only. Adding to local database.")
+            if dry_run:
+                logging.info(f"    [DRY RUN] Would fetch key string for {uid} and add to database.")
+                continue
+            
+            try:
+                # The Key object from list_keys doesn't have key_string, so we fetch it.
+                key_string_response = api_keys_client.get_key_string(name=key_object.name)
+                
+                hydrated_key = TempKey(key_object, key_string_response.key_string)
+
+                with db_lock:
+                    add_key_to_database(account_entry, project, hydrated_key)
+
+            except google_exceptions.PermissionDenied:
+                logging.warning(f"    Permission denied to get key string for {uid}. Skipping.")
+            except google_exceptions.GoogleAPICallError as err:
+                logging.error(f"    Error getting key string for {uid}: {err}")
+
+        for uid in local_only_uids:
+            logging.info(f"    Key {uid} found in local database only. Marking as INACTIVE.")
+            if dry_run:
+                logging.info(f"    [DRY RUN] Would mark key {uid} as INACTIVE.")
+                continue
+            
+            with db_lock:
+                local_keys[uid]['state'] = 'INACTIVE'
+                local_keys[uid]['key_details']['last_updated_timestamp_utc'] = datetime.now(timezone.utc).isoformat()
+        
+        return gemini_key_exists
+
+    except google_exceptions.PermissionDenied:
+        logging.warning(f"  Permission denied to list keys for project {project_id}. Skipping sync.")
+        return False
+    except google_exceptions.GoogleAPICallError as err:
+        logging.error(f"  An API error occurred while syncing keys for project {project_id}: {err}")
+        return False
+
 def process_project_for_action(project, creds, action, dry_run, db_lock, account_entry):
     """Processes a single project for the given action in a thread-safe manner."""
     project_id = project.project_id
     logging.info(f"- Starting to process project: {project_id} ({project.display_name})")
 
     if action == 'create':
-        if project_has_gemini_key(project_id, creds):
+        gemini_key_exists = sync_project_keys(project, creds, dry_run, db_lock, account_entry)
+        if gemini_key_exists:
             logging.info(f"  'Gemini API Key' already exists in project {project_id}. Skipping creation.")
             return
 
@@ -329,20 +434,6 @@ def remove_keys_from_database(account_entry, project_id, deleted_keys_uids):
     num_removed = initial_key_count - final_key_count
     if num_removed > 0:
         logging.info(f"  Removed {num_removed} key(s) from local database for project {project_id}")
-
-def project_has_gemini_key(project_id, credentials):
-    """Checks if a project already has a key named 'Gemini API Key'."""
-    try:
-        api_keys_client = api_keys_v2.ApiKeysClient(credentials=credentials)
-        parent = f"projects/{project_id}/locations/global"
-        keys = api_keys_client.list_keys(parent=parent)
-        for key in keys:
-            if key.display_name in ["Gemini API Key", "Generative Language API Key"]: # 2nd name if when api created using AI studio
-                return True
-        return False
-    except google_exceptions.GoogleAPICallError as err:
-        logging.error(f"  Could not list keys in project {project_id}. Error: {err}")
-        return False
 
 def get_credentials_for_email(email):
     """Handles the OAuth2 flow for a given email."""

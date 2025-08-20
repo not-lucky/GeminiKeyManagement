@@ -63,11 +63,11 @@ This script automates the creation and deletion of Gemini API keys across all Go
 
 ## Usage
 
-The script has two main actions: `create` and `delete`.
+The script has three main actions: `create`, `delete`, and `sync`.
 
 ### Creating API Keys
 
-To create Gemini API keys for all users listed in `emails.txt`:
+To create a new "Gemini API Key" in each project that doesn't already have one:
 
 ```bash
 uv run main.py create
@@ -91,26 +91,46 @@ uv run main.py delete --email user1@example.com
 
 **Note**: The `--email` argument is required for the `delete` action for safety.
 
+### Synchronizing API Keys
+
+To synchronize the local database with the state of keys in Google Cloud for all users in `emails.txt`:
+
+```bash
+uv run main.py sync
+```
+
+You can also run it for a single email:
+```bash
+uv run main.py sync --email user1@example.com
+```
+
+The `sync` action will:
+- Add any keys that exist in the cloud but not locally to the database.
+- Mark any keys that exist locally but not in the cloud as `INACTIVE`.
+- Report any keys that are correctly synchronized.
+
 ### Dry Run
 
-To see what the script *would* do without making any actual changes to your Google Cloud resources, use the `--dry-run` flag.
+To see what the script *would* do without making any actual changes to your Google Cloud resources, use the `--dry-run` flag with any action.
 
 ```bash
 uv run main.py create --dry-run
+uv run main.py sync --email user1@example.com --dry-run
 uv run main.py delete --email user1@example.com --dry-run
 ```
 
 ## Output
 
 -   **Logs**: A detailed log file is created in the `logs/` directory for each run, named with a UTC timestamp (e.g., `gemini_key_management_2023-10-27T12-30-00.log`).
--   **Database**: The `api_keys_database.json` file is created or updated after each successful run. This file contains a structured record of the accounts processed, the projects found, and the API keys created by the script.
+-   **Database**: The `api_keys_database.json` file is created or updated after each successful run. This file contains a structured record of the accounts processed, the projects found, and the API keys managed by the script.
 
 ## How it Works
 
 1.  **Authentication**: For each email, the script looks for a corresponding `[email].json` token file in the `credentials/` directory. If found and valid, it uses it. If not, it initiates the OAuth 2.0 flow.
 2.  **Project Discovery**: It uses the Google Cloud Resource Manager API to find all projects the authenticated user has access to.
-3.  **API Enablement**: For each project, it checks if the "Generative Language API" (`generativelanguage.googleapis.com`) is enabled. If not, it attempts to enable it.
-4.  **Key Creation/Deletion**:
-    -   **Create**: It checks if a key named "Gemini API Key" already exists. If not, it creates a new key using the API Keys API. The key is restricted to only be able to call the `generativellanguage.googleapis.com` service.
+3.  **API Enablement**: For each project, it checks if the "Generative Language API" (`generativelanguage.googleapis.com`) is enabled. If not, it attempts to enable it (during `create` actions).
+4.  **Key Management Actions**:
+    -   **Create**: It checks if a key named "Gemini API Key" already exists. If not, it creates a new key using the API Keys API. The key is restricted to only be able to call the `generativelanguage.googleapis.com` service.
     -   **Delete**: It finds all keys with the display name "Gemini API Key" and deletes them.
-5.  **Database Update**: The script records the details of any created keys in the `api_keys_database.json` file. When keys are deleted, they are removed from this database.
+    -   **Sync**: It compares the keys present in each cloud project with the keys listed in the local `api_keys_database.json`. It adds cloud-only keys to the local database, and marks local-only keys as `INACTIVE`.
+5.  **Database Update**: The script records the details of any created or synced keys in the `api_keys_database.json` file. When keys are deleted, they are removed from this database. During a sync, keys that no longer exist in the cloud are marked as `INACTIVE`.

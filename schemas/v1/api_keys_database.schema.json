@@ -136,7 +136,8 @@
           }
         },
         "state": {
-          "type": "string"
+          "type": "string",
+          "enum": ["ACTIVE", "INACTIVE"]
         }
       }
     }
