@@ -14,6 +14,9 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.cloud import resourcemanager_v3, service_usage_v1, api_keys_v2
 from google.api_core import exceptions as google_exceptions
 from google.auth.transport import requests
+import random
+import string
+import time
 
 # --- CONFIGURATION ---
 CREDENTIALS_DIR = "credentials"
@@ -320,6 +323,82 @@ def process_project_for_action(project, creds, action, dry_run, db_lock, account
     logging.info(f"- Finished processing project: {project_id}")
 
 
+def generate_random_string(length=10):
+    """Generates a random alphanumeric string of a given length."""
+    letters_and_digits = string.ascii_lowercase + string.digits
+    return ''.join(random.choice(letters_and_digits) for i in range(length))
+
+
+def wait_for_project_ready(project_id, creds, timeout_seconds=300, initial_delay=5):
+    """Waits for a newly created project to become fully active."""
+    logging.info(f"  Waiting for project {project_id} to become fully active...")
+    resource_manager = resourcemanager_v3.ProjectsClient(credentials=creds)
+    start_time = time.time()
+    delay = initial_delay
+
+    while time.time() - start_time < timeout_seconds:
+        try:
+            resource_manager.get_project(name=f"projects/{project_id}")
+            logging.info(f"  Project {project_id} is now active.")
+            return True
+        except google_exceptions.NotFound:
+            logging.info(f"  Project {project_id} not found yet. Retrying in {delay} seconds...")
+        except google_exceptions.PermissionDenied:
+            logging.info(f"  Project {project_id} not accessible yet. Retrying in {delay} seconds...")
+        except google_exceptions.GoogleAPICallError as e:
+            logging.warning(f"  An API error occurred while waiting for project {project_id}: {e}. Retrying in {delay} seconds...")
+
+        time.sleep(delay)
+        delay = min(delay * 2, 30)
+
+    logging.error(f"  Timed out waiting for project {project_id} to become active after {timeout_seconds} seconds.")
+    return False
+
+
+def create_projects_if_needed(projects, creds, dry_run=False):
+    """Creates new projects if the account has fewer than 12 projects."""
+    existing_project_count = len(projects)
+    logging.info(f"Found {existing_project_count} existing projects.")
+    newly_created_projects = []
+
+    if existing_project_count >= 12:
+        logging.info("Account already has 12 or more projects. No new projects will be created.")
+        return newly_created_projects
+
+    for i in range(existing_project_count, 12):
+        project_number = str(i + 1).zfill(2)
+        random_string = generate_random_string()
+        project_id = f"project{project_number}-{random_string}"
+        display_name = f"Project{project_number}"
+        
+        logging.info(f"Attempting to create project: ID='{project_id}', Name='{display_name}'")
+
+        if dry_run:
+            logging.info(f"[DRY RUN] Would create project '{display_name}' with ID '{project_id}'.")
+            continue
+
+        try:
+            resource_manager = resourcemanager_v3.ProjectsClient(credentials=creds)
+            project_to_create = resourcemanager_v3.Project(
+                project_id=project_id,
+                display_name=display_name
+            )
+            operation = resource_manager.create_project(project=project_to_create)
+            logging.info(f"Waiting for project creation operation for '{display_name}' to complete...")
+            created_project = operation.result()
+            logging.info(f"Successfully created project '{display_name}'.")
+
+            if wait_for_project_ready(project_id, creds):
+                newly_created_projects.append(created_project)
+            else:
+                logging.error(f"Could not confirm project '{display_name}' ({project_id}) became active. It will be skipped.")
+
+        except Exception as e:
+            logging.error(f"Failed to create project '{display_name}': {e}")
+    
+    return newly_created_projects
+
+
 def process_account(email, action, api_keys_data, dry_run=False, max_workers=5):
     """Processes a single account for the given action."""
     logging.info(f"--- Processing account: {email} for action: {action} ---")
@@ -348,6 +427,10 @@ def process_account(email, action, api_keys_data, dry_run=False, max_workers=5):
     try:
         resource_manager = resourcemanager_v3.ProjectsClient(credentials=creds)
         projects = list(resource_manager.search_projects())
+
+        if action == 'create':
+            new_projects = create_projects_if_needed(projects, creds, dry_run)
+            projects.extend(new_projects)
 
         if not projects:
             logging.info(f"No projects found for {email}.")
