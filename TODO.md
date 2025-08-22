@@ -1,0 +1,1 @@
+During project creation readiness check, it might take some time. The time in which we could perform other tasks.
