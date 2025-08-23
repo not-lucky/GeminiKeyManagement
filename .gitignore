@@ -7,9 +7,10 @@ __pycache__/
 
 # Credentials and Secrets
 credentials/
-credentials.json
+credentials*
 *.key
 emails.txt
 *.keys.txt
 api_keys_database.json
 logs/
+gemini_key_manager copy/
