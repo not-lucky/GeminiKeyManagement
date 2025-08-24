@@ -1,20 +1,22 @@
-"""This module defines configuration constants used throughout the application."""
+"""
+Configuration constants for the Gemini Key Management script.
+"""
 import os
 
-# --- Directory Paths ---
+# --- DIRECTORIES ---
 CREDENTIALS_DIR = "credentials"
 LOG_DIR = "logs"
 SCHEMA_DIR = "schemas"
 
-# --- File Names ---
+# --- FILENAMES ---
 EMAILS_FILE = "emails.txt"
 CLIENT_SECRETS_FILE = "credentials.json"
 API_KEYS_DATABASE_FILE = "api_keys_database.json"
 
-# --- Schema Configuration ---
+# --- SCHEMA ---
 API_KEYS_SCHEMA_FILE = os.path.join(SCHEMA_DIR, "v1", "api_keys_database.schema.json")
 
-# --- Google API Settings ---
+# --- GOOGLE API ---
 SCOPES = [
     "https://www.googleapis.com/auth/cloud-platform",
 ]

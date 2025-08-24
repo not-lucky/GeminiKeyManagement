@@ -13,4 +13,3 @@ emails.txt
 *.keys.txt
 api_keys_database.json
 logs/
-gemini_key_manager copy/

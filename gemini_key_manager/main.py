@@ -1,4 +1,6 @@
-"""This is the main entry point for the Gemini Key Management command-line tool."""
+"""
+Main entry point for the Gemini Key Management script.
+"""
 import argparse
 import logging
 import sys
@@ -7,7 +9,7 @@ import concurrent.futures
 from . import utils, config, auth, database, actions
 
 def main():
-    """Parses command-line arguments and orchestrates the key management process."""
+    """Main function to orchestrate API key creation or deletion."""
     parser = argparse.ArgumentParser(description="Manage Gemini API keys in Google Cloud projects.")
     parser.add_argument("action", choices=['create', 'delete'], help="The action to perform: 'create' or 'delete' API keys.")
     parser.add_argument("--email", help="Specify a single email address to process. Required for 'delete'. If not provided for 'create', emails will be read from emails.txt.")
@@ -40,7 +42,7 @@ def main():
     elif args.action == 'delete':
         logging.error("The 'delete' action requires the --email argument to specify which account's keys to delete.")
         sys.exit(1)
-    else: # 'create' action without a specific email
+    else: # action is 'create' and no email provided
         emails_to_process = utils.load_emails_from_file(config.EMAILS_FILE)
         if not emails_to_process:
             logging.info("No emails found in emails.txt. Exiting.")

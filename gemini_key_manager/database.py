@@ -1,4 +1,6 @@
-"""This module handles all interactions with the local JSON database."""
+"""
+Functions for managing the JSON database of API keys.
+"""
 import os
 import json
 import logging
@@ -8,7 +10,7 @@ import jsonschema
 from . import config
 
 def load_schema(filename):
-    """Loads and parses a JSON schema file."""
+    """Loads a JSON schema from a file."""
     if not os.path.exists(filename):
         logging.error(f"Schema file not found at '{filename}'")
         sys.exit(1)
@@ -20,10 +22,7 @@ def load_schema(filename):
             sys.exit(1)
 
 def load_keys_database(filename, schema):
-    """
-    Loads the API keys database from a JSON file.
-    If the file doesn't exist, is empty, or invalid, it returns a new, empty database structure.
-    """
+    """Loads and validates the JSON database of API keys."""
     if not os.path.exists(filename):
         return {
             "schema_version": "1.0.0",
@@ -45,7 +44,7 @@ def load_keys_database(filename, schema):
         }
 
 def save_keys_to_json(data, filename, schema):
-    """Saves the provided data structure to a JSON file after validating it against the schema."""
+    """Validates and saves the API key data to a single JSON file."""
     now = datetime.now(timezone.utc).isoformat()
     data["generation_timestamp_utc"] = data.get("generation_timestamp_utc", now)
     data["last_modified_utc"] = now
@@ -60,10 +59,7 @@ def save_keys_to_json(data, filename, schema):
         sys.exit(1)
 
 def add_key_to_database(account_entry, project, key_object):
-    """
-    Adds a new API key to the database under the appropriate account and project.
-    If the project does not exist for the account, it will be created.
-    """
+    """Adds a new API key's details to the data structure."""
     project_id = project.project_id
 
     project_entry = next((p for p in account_entry["projects"] if p.get("project_info", {}).get("project_id") == project_id), None)
@@ -107,7 +103,7 @@ def add_key_to_database(account_entry, project, key_object):
         logging.warning(f"  Key {key_object.uid} already exists in local database for project {project_id}")
 
 def remove_keys_from_database(account_entry, project_id, deleted_keys_uids):
-    """Removes a list of API keys from a project's entry in the database."""
+    """Removes deleted API keys from the data structure."""
     project_entry = next((p for p in account_entry["projects"] if p.get("project_info", {}).get("project_id") == project_id), None)
     if not project_entry:
         return

@@ -1,19 +1,22 @@
-"""Handles Google Cloud authentication, including token refresh and interactive OAuth2 flows."""
+"""
+Functions for handling Google Cloud authentication.
+"""
 import os
 import json
 import logging
 import time
 import google.auth
 from google.oauth2.credentials import Credentials
+import google_auth_oauthlib.flow
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport import requests
 from . import config
 
+logger = logging.getLogger(__name__)
+
+
 def get_and_refresh_credentials(email, max_retries=3, retry_delay=5):
-    """
-    Attempts to load credentials from a token file and refresh them if they are expired.
-    This function operates non-interactively and will not prompt the user to log in.
-    """
+    """Tries to load and refresh credentials for an email with retries. Does not start interactive flow."""
     token_file = os.path.join(config.CREDENTIALS_DIR, f"{email}.json")
     creds = None
     if os.path.exists(token_file):
@@ -46,14 +49,11 @@ def get_and_refresh_credentials(email, max_retries=3, retry_delay=5):
     return None
 
 def run_interactive_auth(email, max_retries=3, retry_delay=5):
-    """
-    Initiates an interactive, browser-based OAuth2 flow to get new credentials for a user.
-    The new credentials are then saved to a token file for future non-interactive use.
-    """
+    """Runs the interactive OAuth2 flow for a given email with retries."""
     for attempt in range(max_retries):
         try:
             logging.info(f"Please authenticate with: {email} (attempt {attempt + 1}/{max_retries})")
-            flow = InstalledAppFlow.from_client_secrets_file(
+            flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
                 config.CLIENT_SECRETS_FILE, config.SCOPES
             )
             creds = flow.run_local_server(port=0)
