@@ -255,7 +255,7 @@ def process_project_for_action(project, creds, action, dry_run, db_lock, account
     
     logging.info(f"Completed processing {project_id}")
 
-def process_account(email, creds, action, api_keys_data, dry_run=False, max_workers=5):
+def process_account(email, creds, action, api_keys_data, schema, dry_run=False, max_workers=5):
     """Orchestrates account-level key management operations.
     
     Args:
@@ -263,6 +263,7 @@ def process_account(email, creds, action, api_keys_data, dry_run=False, max_work
         creds (Credentials): Authenticated credentials
         action (str): 'create' or 'delete' action
         api_keys_data (dict): Database structure
+        schema (dict): The database schema.
         dry_run (bool): Simulation mode flag
         max_workers (int): Max concurrent operations
     """
@@ -325,3 +326,6 @@ def process_account(email, creds, action, api_keys_data, dry_run=False, max_work
         logging.error(f"Permission denied for {email}: {err}")
     except google_exceptions.GoogleAPICallError as err:
         logging.error(f"API error processing {email}: {err}")
+
+    if not dry_run:
+        database.save_keys_to_json(api_keys_data, config.API_KEYS_DATABASE_FILE, schema)

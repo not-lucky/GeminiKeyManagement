@@ -91,9 +91,6 @@ def main():
 
     for email in emails_to_process:
         if email in creds_map:
-            actions.process_account(email, creds_map[email], args.action, api_keys_data, dry_run=args.dry_run, max_workers=args.max_workers)
+            actions.process_account(email, creds_map[email], args.action, api_keys_data, schema, dry_run=args.dry_run, max_workers=args.max_workers)
         else:
             logging.warning(f"Skipping account {email} because authentication was not successful.")
-
-    if not args.dry_run:
-        database.save_keys_to_json(api_keys_data, config.API_KEYS_DATABASE_FILE, schema)
