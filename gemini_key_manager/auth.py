@@ -1,5 +1,9 @@
-"""
-Functions for handling Google Cloud authentication.
+"""Implements Google Cloud authentication workflows.
+
+Handles OAuth2 credential management including:
+- Token refresh with retry logic
+- Interactive authentication flows
+- Credential storage/retrieval
 """
 import os
 import json
@@ -16,7 +20,16 @@ logger = logging.getLogger(__name__)
 
 
 def get_and_refresh_credentials(email, max_retries=3, retry_delay=5):
-    """Tries to load and refresh credentials for an email with retries. Does not start interactive flow."""
+    """Manages credential lifecycle with automated refresh and retry.
+    
+    Args:
+        email (str): Service account email address
+        max_retries (int): Maximum authentication retry attempts
+        retry_delay (int): Seconds between retry attempts
+    
+    Returns:
+        Credentials: Valid credentials or None if unrecoverable
+    """
     token_file = os.path.join(config.CREDENTIALS_DIR, f"{email}.json")
     creds = None
     if os.path.exists(token_file):
@@ -49,7 +62,16 @@ def get_and_refresh_credentials(email, max_retries=3, retry_delay=5):
     return None
 
 def run_interactive_auth(email, max_retries=3, retry_delay=5):
-    """Runs the interactive OAuth2 flow for a given email with retries."""
+    """Executes interactive OAuth2 flow with error handling.
+    
+    Args:
+        email (str): Target service account email
+        max_retries (int): Allowed authentication attempts
+        retry_delay (int): Pause between failed attempts
+    
+    Returns:
+        Credentials: On successful authentication
+    """
     for attempt in range(max_retries):
         try:
             logging.info(f"Please authenticate with: {email} (attempt {attempt + 1}/{max_retries})")

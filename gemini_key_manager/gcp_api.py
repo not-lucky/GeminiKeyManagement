@@ -10,7 +10,19 @@ from google.api_core import exceptions as google_exceptions
 from . import config, utils, exceptions
 
 def enable_api(project_id, credentials, dry_run=False):
-    """Enables the Generative Language API."""
+    """Manages Generative Language API enablement with error handling.
+    
+    Args:
+        project_id (str): Target GCP project ID
+        credentials (Credentials): Authenticated credentials
+        dry_run (bool): Simulation mode flag
+    
+    Returns:
+        bool: True if enabled successfully
+    
+    Raises:
+        TermsOfServiceNotAcceptedError: When required ToS not accepted
+    """
     service_name = config.GENERATIVE_LANGUAGE_API
     service_path = f"projects/{project_id}/services/{service_name}"
     service_usage_client = service_usage_v1.ServiceUsageClient(credentials=credentials)
@@ -42,7 +54,19 @@ def enable_api(project_id, credentials, dry_run=False):
         return False
 
 def create_api_key(project_id, credentials, dry_run=False):
-    """Creates a new, restricted API key."""
+    """Generates restricted API key with security constraints.
+    
+    Args:
+        project_id (str): Target GCP project ID
+        credentials (Credentials): Authenticated credentials
+        dry_run (bool): Simulation mode flag
+    
+    Returns:
+        api_keys_v2.Key: Created key object or None on failure
+    
+    Raises:
+        PermissionDenied: For insufficient credentials
+    """
     if dry_run:
         logging.info(f"  [DRY RUN] Would create API key for project {project_id}")
         # Return a mock key object for dry run

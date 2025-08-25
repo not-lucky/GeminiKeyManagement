@@ -9,7 +9,14 @@ import concurrent.futures
 from . import utils, config, auth, database, actions
 
 def main():
-    """Main function to orchestrate API key creation or deletion."""
+    """Orchestrates API key lifecycle management workflow.
+    
+    Handles:
+    - Command line argument parsing
+    - Credential management
+    - Multi-account processing
+    - Thread pool execution
+    """
     parser = argparse.ArgumentParser(description="Manage Gemini API keys in Google Cloud projects.")
     parser.add_argument("action", choices=['create', 'delete'], help="The action to perform: 'create' or 'delete' API keys.")
     parser.add_argument("--email", help="Specify a single email address to process. Required for 'delete'. If not provided for 'create', emails will be read from emails.txt.")

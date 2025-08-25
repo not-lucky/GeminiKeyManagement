@@ -1,5 +1,10 @@
-"""
-Core action functions for the Gemini Key Management script.
+"""Implements core business logic for Gemini API key lifecycle management.
+
+This module handles:
+- Project reconciliation between cloud state and local database
+- API key creation/deletion operations
+- Thread-safe database interactions
+- Interactive Terms of Service acceptance workflows
 """
 import logging
 import threading
@@ -11,8 +16,21 @@ from google.cloud import resourcemanager_v3, api_keys_v2
 from . import config, gcp_api, database, utils
 from .exceptions import TermsOfServiceNotAcceptedError
 
-# Helper class to create a mock key object compatible with add_key_to_database
 class TempKey:
+    """Mock key object compatible with database operations.
+    
+    Provides a temporary representation of an API key for database insertion
+    when direct API key string retrieval is not possible.
+
+    Attributes:
+        key_string (str): The actual API key string
+        uid (str): Unique identifier of the key
+        name (str): Full resource name of the key
+        display_name (str): Human-readable display name
+        create_time (datetime): Key creation timestamp
+        update_time (datetime): Last update timestamp
+        restrictions (api_keys_v2.Restrictions): Key usage restrictions
+    """
     def __init__(self, cloud_key, key_string):
         self.key_string = key_string
         self.uid = cloud_key.uid
@@ -23,38 +41,69 @@ class TempKey:
         self.restrictions = cloud_key.restrictions
 
 class TosAcceptanceHelper:
-    """Helper class to manage the interactive ToS acceptance process using an Event."""
+    """Manages Terms of Service acceptance workflow with thread synchronization.
+    
+    Coordinates interactive ToS acceptance across multiple threads to prevent
+    duplicate prompts and ensure proper sequencing.
+
+    Attributes:
+        lock (threading.Lock): Synchronizes access to prompt state
+        prompted_event (threading.Event): Signals ToS acceptance completion
+        prompt_in_progress (bool): Indicates active prompt display status
+    """
     def __init__(self):
         self.lock = threading.Lock()
         self.prompted_event = threading.Event()
         self.prompt_in_progress = False
 
 def _enable_api_with_interactive_retry(project_id, creds, dry_run, tos_helper):
-    """Calls the enable_api function with a retry loop that handles ToS exceptions."""
+    """Attempts to enable API with retry logic for ToS acceptance.
+    
+    Args:
+        project_id (str): Target GCP project ID
+        creds (Credentials: Authenticated Google credentials
+        dry_run (bool): Simulation mode flag
+        tos_helper (TosAcceptanceHelper): ToS workflow coordinator
+
+    Returns:
+        bool: True if API enabled successfully
+    
+    Raises:
+        GoogleAPICallError: For non-ToS related API failures
+    """
     while True:
         try:
             if gcp_api.enable_api(project_id, creds, dry_run=dry_run):
                 return True
-            else:
-                return False
+            return False
         except TermsOfServiceNotAcceptedError as err:
             with tos_helper.lock:
                 if not tos_helper.prompt_in_progress:
                     tos_helper.prompt_in_progress = True
                     logging.error(err.message)
-                    logging.error(f"Please accept the terms by visiting this URL: {err.url}")
-                    input("Press Enter to continue after accepting the Terms of Service...")
+                    logging.error(f"Accept terms at: {err.url}")
+                    input("Press Enter after accepting Terms of Service...")
                     tos_helper.prompted_event.set()
-            
             tos_helper.prompted_event.wait()
         except Exception as e:
-            logging.error(f"An unexpected error occurred while trying to enable API for project {project_id}: {e}", exc_info=True)
+            logging.error(f"API enablement error for {project_id}: {e}", exc_info=True)
             return False
 
 def reconcile_project_keys(project, creds, dry_run, db_lock, account_entry):
-    """Reconciles API keys between Google Cloud and the local database for a single project."""
+    """Reconciles cloud and local database API key states.
+    
+    Args:
+        project (Project): GCP Project resource
+        creds (Credentials): Authenticated credentials
+        dry_run (bool): Simulation mode flag
+        db_lock (threading.Lock): Database access lock
+        account_entry (dict): Account data structure
+    
+    Returns:
+        bool: True if Gemini key exists, False otherwise
+    """
     project_id = project.project_id
-    logging.info(f"  Reconciling keys for project {project_id}")
+    logging.info(f"Reconciling keys for {project_id}")
     gemini_key_exists = False
 
     try:
@@ -93,13 +142,13 @@ def reconcile_project_keys(project, creds, dry_run, db_lock, account_entry):
         local_only_uids = local_uids - cloud_uids
 
         for uid in synced_uids:
-            logging.info(f"    Key {uid} is synchronized.")
+            logging.info(f"Key {uid} synchronized")
 
         for uid in cloud_only_uids:
             key_object = cloud_keys[uid]
-            logging.info(f"    Key {uid} ({key_object.display_name}) found in cloud only. Adding to local database.")
+            logging.info(f"Adding cloud-only key {uid} ({key_object.display_name})")
             if dry_run:
-                logging.info(f"    [DRY RUN] Would fetch key string for {uid} and add to database.")
+                logging.info(f"[DRY RUN] Would fetch key string for {uid}")
                 continue
             
             try:
@@ -108,14 +157,14 @@ def reconcile_project_keys(project, creds, dry_run, db_lock, account_entry):
                 with db_lock:
                     database.add_key_to_database(account_entry, project, hydrated_key)
             except google_exceptions.PermissionDenied:
-                logging.warning(f"    Permission denied to get key string for {uid}. Skipping.")
+                logging.warning(f"Permission denied to get key string for {uid}")
             except google_exceptions.GoogleAPICallError as err:
-                logging.error(f"    Error getting key string for {uid}: {err}")
+                logging.error(f"Key string error for {uid}: {err}")
 
         for uid in local_only_uids:
-            logging.info(f"    Key {uid} found in local database only. Marking as INACTIVE.")
+            logging.info(f"Marking local-only key {uid} as INACTIVE")
             if dry_run:
-                logging.info(f"    [DRY RUN] Would mark key {uid} as INACTIVE.")
+                logging.info(f"[DRY RUN] Would deactivate {uid}")
                 continue
             
             with db_lock:
@@ -125,53 +174,72 @@ def reconcile_project_keys(project, creds, dry_run, db_lock, account_entry):
         return gemini_key_exists
 
     except google_exceptions.PermissionDenied:
-        logging.warning(f"  Permission denied to list keys for project {project_id}. Skipping reconciliation.")
+        logging.warning(f"Permission denied listing keys for {project_id}")
         return False
     except google_exceptions.GoogleAPICallError as err:
-        logging.error(f"  An API error occurred while reconciling keys for project {project_id}: {err}")
+        logging.error(f"API error during reconciliation: {err}")
         return False
 
 def _create_and_process_new_project(project_number, creds, dry_run, db_lock, account_entry, tos_helper):
-    """Creates a single project, waits for API enablement, and creates the key."""
+    """Creates and initializes new GCP project with API key.
+    
+    Args:
+        project_number (str): Sequential project identifier
+        creds (Credentials): Authenticated credentials
+        dry_run (bool): Simulation mode flag
+        db_lock (threading.Lock): Database access lock
+        account_entry (dict): Account data structure
+        tos_helper (TosAcceptanceHelper): ToS workflow coordinator
+    """
     random_string = utils.generate_random_string()
     project_id = f"project{project_number}-{random_string}"
     display_name = f"Project{project_number}"
     
-    logging.info(f"Attempting to create project: ID='{project_id}', Name='{display_name}'")
+    logging.info(f"Creating project: {display_name} ({project_id})")
 
     if dry_run:
-        logging.info(f"[DRY RUN] Would create project '{display_name}' with ID '{project_id}'.")
+        logging.info(f"[DRY RUN] Would create {display_name}")
         return
 
     try:
         resource_manager = resourcemanager_v3.ProjectsClient(credentials=creds)
         project_to_create = resourcemanager_v3.Project(project_id=project_id, display_name=display_name)
         operation = resource_manager.create_project(project=project_to_create)
-        logging.info(f"Waiting for project creation operation for '{display_name}' to complete...")
+        logging.info(f"Awaiting project creation: {display_name}")
         created_project = operation.result()
-        logging.info(f"Successfully initiated creation for project '{display_name}'.")
+        logging.info(f"Project created: {display_name}")
 
         if _enable_api_with_interactive_retry(project_id, creds, dry_run, tos_helper):
-            logging.info(f"Generative AI API enabled for project '{display_name}' ({project_id}). Project is ready.")
+            logging.info(f"API enabled for {display_name}")
             key_object = gcp_api.create_api_key(project_id, creds, dry_run=dry_run)
             if key_object:
                 with db_lock:
                     database.add_key_to_database(account_entry, created_project, key_object)
         else:
-            logging.error(f"Failed to enable API for new project '{display_name}' ({project_id}). Skipping key creation.")
+            logging.error(f"API enablement failed for {display_name}")
 
     except Exception as e:
-        logging.error(f"Failed to create project '{display_name}': {e}", exc_info=True)
+        logging.error(f"Project creation failed: {e}", exc_info=True)
 
 def process_project_for_action(project, creds, action, dry_run, db_lock, account_entry, tos_helper):
-    """Processes a single existing project for the given action in a thread-safe manner."""
+    """Executes specified action on a single GCP project.
+    
+    Args:
+        project (Project): Target GCP project
+        creds (Credentials): Authenticated credentials
+        action (str): 'create' or 'delete' action
+        dry_run (bool): Simulation mode flag
+        db_lock (threading.Lock): Database access lock
+        account_entry (dict): Account data structure
+        tos_helper (TosAcceptanceHelper): ToS workflow coordinator
+    """
     project_id = project.project_id
-    logging.info(f"- Starting to process project: {project_id} ({project.display_name})")
+    logging.info(f"Processing {project_id} ({project.display_name})")
 
     if action == 'create':
         gemini_key_exists = reconcile_project_keys(project, creds, dry_run, db_lock, account_entry)
         if gemini_key_exists:
-            logging.info(f"  '{config.GEMINI_API_KEY_DISPLAY_NAME}' already exists in project {project_id}. Skipping creation.")
+            logging.info(f"Existing Gemini key in {project_id}")
             return
 
         if _enable_api_with_interactive_retry(project_id, creds, dry_run, tos_helper):
@@ -185,16 +253,25 @@ def process_project_for_action(project, creds, action, dry_run, db_lock, account
             with db_lock:
                 database.remove_keys_from_database(account_entry, project_id, deleted_keys_uids)
     
-    logging.info(f"- Finished processing project: {project_id}")
+    logging.info(f"Completed processing {project_id}")
 
 def process_account(email, creds, action, api_keys_data, dry_run=False, max_workers=5):
-    """Processes a single account for the given action."""
-    logging.info(f"--- Processing account: {email} for action: {action} ---")
+    """Orchestrates account-level key management operations.
+    
+    Args:
+        email (str): Service account email
+        creds (Credentials): Authenticated credentials
+        action (str): 'create' or 'delete' action
+        api_keys_data (dict): Database structure
+        dry_run (bool): Simulation mode flag
+        max_workers (int): Max concurrent operations
+    """
+    logging.info(f"Processing account: {email} ({action})")
     if dry_run:
-        logging.info("*** DRY RUN MODE ENABLED ***")
+        logging.info("*** DRY RUN ACTIVE ***")
 
     if not creds:
-        logging.warning(f"Could not get credentials for {email}. Skipping.")
+        logging.warning(f"Invalid credentials for {email}")
         return
 
     account_entry = next((acc for acc in api_keys_data["accounts"] if acc.get("account_details", {}).get("email") == email), None)
@@ -216,10 +293,9 @@ def process_account(email, creds, action, api_keys_data, dry_run=False, max_work
         existing_projects = list(resource_manager.search_projects())
         
         if not existing_projects and action == 'create':
-            logging.warning(f"No projects found for {email}. This could be due to several reasons:")
-            logging.warning("  1. The account truly has no projects.")
-            logging.warning("  2. The Cloud Resource Manager API Terms of Service have not been accepted.")
-            logging.warning(f"Please ensure the ToS are accepted by visiting: https://console.cloud.google.com/iam-admin/settings?user={email}")
+            logging.warning(f"No projects found for {email}")
+            logging.warning("Possible reasons: No projects or unaccepted ToS")
+            logging.warning(f"Verify ToS: https://console.cloud.google.com/iam-admin/settings?user={email}")
 
         projects_to_create_count = 0
         if action == 'create':
@@ -231,11 +307,9 @@ def process_account(email, creds, action, api_keys_data, dry_run=False, max_work
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
-            # Submit tasks for existing projects
             for project in existing_projects:
                 futures.append(executor.submit(process_project_for_action, project, creds, action, dry_run, db_lock, account_entry, tos_helper))
 
-            # Submit tasks for new projects
             if action == 'create' and projects_to_create_count > 0:
                 for i in range(len(existing_projects), 12):
                     project_number = str(i + 1).zfill(2)
@@ -245,10 +319,9 @@ def process_account(email, creds, action, api_keys_data, dry_run=False, max_work
                 try:
                     future.result()
                 except Exception as exc:
-                    logging.error(f"A task in the thread pool generated an exception: {exc}", exc_info=True)
+                    logging.error(f"Task error: {exc}", exc_info=True)
 
     except google_exceptions.PermissionDenied as err:
-        logging.error(f"Permission denied for account {email}. Check IAM roles.")
-        logging.error(f"  Error: {err}")
+        logging.error(f"Permission denied for {email}: {err}")
     except google_exceptions.GoogleAPICallError as err:
-        logging.error(f"An API error occurred while processing account {email}: {err}")
+        logging.error(f"API error processing {email}: {err}")

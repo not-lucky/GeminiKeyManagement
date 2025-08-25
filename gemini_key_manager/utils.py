@@ -11,7 +11,11 @@ from colorama import Fore, Style, init
 from . import config
 
 class ColoredFormatter(logging.Formatter):
-    """A custom logging formatter that adds color to console output."""
+    """Adds ANSI color coding to log output based on severity.
+    
+    Attributes:
+        LOG_COLORS (dict): Maps log levels to color codes
+    """
 
     LOG_COLORS = {
         logging.DEBUG: Fore.CYAN,
@@ -36,7 +40,13 @@ class ColoredFormatter(logging.Formatter):
         return message
 
 def setup_logging():
-    """Sets up logging to both console and a file, with colors for the console."""
+    """Configures dual logging to file and colorized console output.
+    
+    Creates:
+    - Rotating file handler with full debug details
+    - Stream handler with color-coded brief format
+    Ensures proper directory structure for log files
+    """
     init(autoreset=True) # Initialize Colorama
 
     if not os.path.exists(config.LOG_DIR):

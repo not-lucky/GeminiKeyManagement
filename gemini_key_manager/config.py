@@ -1,5 +1,9 @@
-"""
-Configuration constants for the Gemini Key Management script.
+"""Centralized configuration for Gemini Key Management system.
+
+Contains:
+- Directory paths for credentials and logs
+- API endpoint configurations
+- Security scopes and schema locations
 """
 import os
 

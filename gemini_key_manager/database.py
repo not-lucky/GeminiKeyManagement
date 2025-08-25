@@ -1,5 +1,10 @@
-"""
-Functions for managing the JSON database of API keys.
+"""Manages persistent storage of API key metadata.
+
+Implements:
+- JSON schema validation
+- Thread-safe database operations
+- Key lifecycle tracking
+- Data versioning and backup
 """
 import os
 import json
@@ -10,7 +15,17 @@ import jsonschema
 from . import config
 
 def load_schema(filename):
-    """Loads a JSON schema from a file."""
+    """Validates and loads JSON schema definition.
+    
+    Args:
+        filename (str): Path to schema file
+    
+    Returns:
+        dict: Parsed schema document
+    
+    Exits:
+        SystemExit: On invalid schema file
+    """
     if not os.path.exists(filename):
         logging.error(f"Schema file not found at '{filename}'")
         sys.exit(1)
