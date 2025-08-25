@@ -5,6 +5,7 @@ Contains:
 - API endpoint configurations
 - Security scopes and schema locations
 """
+
 import os
 
 # --- DIRECTORIES ---
