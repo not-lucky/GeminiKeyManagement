@@ -1,18 +1,23 @@
 """
 Utility functions for the Gemini Key Management script.
 """
+from __future__ import annotations
+
 import logging
 import os
 import sys
 import random
 import string
 from datetime import datetime, timezone
+from typing import List
+
 from colorama import Fore, Style, init
 from . import config
 
+
 class ColoredFormatter(logging.Formatter):
     """Adds ANSI color coding to log output based on severity.
-    
+
     Attributes:
         LOG_COLORS (dict): Maps log levels to color codes
     """
@@ -25,7 +30,7 @@ class ColoredFormatter(logging.Formatter):
         logging.CRITICAL: Fore.RED + Style.BRIGHT,
     }
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         """Formats the log record with appropriate colors."""
         color = self.LOG_COLORS.get(record.levelno)
         message = super().format(record)
@@ -39,15 +44,16 @@ class ColoredFormatter(logging.Formatter):
                 message = color + message + Style.RESET_ALL
         return message
 
-def setup_logging():
+
+def setup_logging() -> None:
     """Configures dual logging to file and colorized console output.
-    
+
     Creates:
     - Rotating file handler with full debug details
     - Stream handler with color-coded brief format
     Ensures proper directory structure for log files
     """
-    init(autoreset=True) # Initialize Colorama
+    init(autoreset=True)  # Initialize Colorama
 
     if not os.path.exists(config.LOG_DIR):
         os.makedirs(config.LOG_DIR)
@@ -63,7 +69,7 @@ def setup_logging():
         logger.handlers.clear()
 
     # File handler for detailed, non-colored logging
-    file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
+    file_handler = logging.FileHandler(log_filepath, encoding="utf-8")
     file_formatter = logging.Formatter(
         "%(asctime)s - %(levelname)s - [%(name)s:%(module)s:%(lineno)d] - %(message)s"
     )
@@ -78,7 +84,8 @@ def setup_logging():
 
     logging.info(f"Logging initialized. Log file: {log_filepath}")
 
-def load_emails_from_file(filename):
+
+def load_emails_from_file(filename: str) -> List[str]:
     """Loads a list of emails from a text file, ignoring comments."""
     if not os.path.exists(filename):
         logging.error(f"Email file not found at '{filename}'")
@@ -86,9 +93,12 @@ def load_emails_from_file(filename):
         return []
     with open(filename, "r") as f:
         # Ignore empty lines and lines starting with #
-        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+        return [
+            line.strip() for line in f if line.strip() and not line.startswith("#")
+        ]
 
-def generate_random_string(length=10):
+
+def generate_random_string(length: int = 10) -> str:
     """Generates a random alphanumeric string of a given length."""
     letters_and_digits = string.ascii_lowercase + string.digits
-    return ''.join(random.choice(letters_and_digits) for i in range(length))
+    return "".join(random.choice(letters_and_digits) for _ in range(length))

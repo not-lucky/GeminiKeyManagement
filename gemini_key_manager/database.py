@@ -7,15 +7,24 @@ Implements:
 - Data versioning and backup
 """
 
+from __future__ import annotations
+
 import os
 import json
 import logging
 import sys
 from datetime import datetime, timezone
+from typing import Any, Dict, List
+
 import jsonschema
+from google.cloud.resourcemanager_v3.types import Project as CloudProject
+from google.cloud.api_keys_v2.types import Key as CloudKey
+
+from .types import Account, ApiKeysDatabase, Project as LocalProject, TempKey
 
 
-def load_schema(filename):
+
+def load_schema(filename: str) -> Dict[str, Any]:
     """Validates and loads JSON schema definition.
 
     Args:
@@ -38,10 +47,18 @@ def load_schema(filename):
             sys.exit(1)
 
 
-def load_keys_database(filename, schema):
+def load_keys_database(filename: str, schema: Dict[str, Any]) -> ApiKeysDatabase:
     """Loads and validates the JSON database of API keys."""
+    now = datetime.now(timezone.utc).isoformat()
+    empty_db: ApiKeysDatabase = {
+        "schema_version": "1.0.0",
+        "accounts": [],
+        "generation_timestamp_utc": now,
+        "last_modified_utc": now,
+    }
     if not os.path.exists(filename):
-        return {"schema_version": "1.0.0", "accounts": []}
+        return empty_db
+
     with open(filename, "r") as f:
         try:
             data = json.load(f)
@@ -54,10 +71,12 @@ def load_keys_database(filename, schema):
                 f"Database file '{filename}' is not valid. {e.message}. Starting fresh."
             )
 
-        return {"schema_version": "1.0.0", "accounts": []}
+    return empty_db
 
 
-def save_keys_to_json(data, filename, schema):
+def save_keys_to_json(
+    data: ApiKeysDatabase, filename: str, schema: Dict[str, Any]
+) -> None:
     """Validates and saves the API key data to a single JSON file."""
     now = datetime.now(timezone.utc).isoformat()
     data["generation_timestamp_utc"] = data.get("generation_timestamp_utc", now)
@@ -73,7 +92,9 @@ def save_keys_to_json(data, filename, schema):
         sys.exit(1)
 
 
-def add_key_to_database(account_entry, project, key_object):
+def add_key_to_database(
+    account_entry: Account, project: CloudProject, key_object: TempKey | CloudKey
+) -> None:
     """Adds a new API key's details to the data structure."""
     project_id = project.project_id
 
@@ -86,7 +107,7 @@ def add_key_to_database(account_entry, project, key_object):
         None,
     )
     if not project_entry:
-        project_entry = {
+        project_entry: LocalProject = {
             "project_info": {
                 "project_id": project_id,
                 "project_name": project.display_name,
@@ -97,7 +118,7 @@ def add_key_to_database(account_entry, project, key_object):
         }
         account_entry["projects"].append(project_entry)
 
-    api_targets = []
+    api_targets: List[Dict[str, List[str]]] = []
     if key_object.restrictions and key_object.restrictions.api_targets:
         for target in key_object.restrictions.api_targets:
             api_targets.append({"service": target.service, "methods": []})
@@ -134,7 +155,9 @@ def add_key_to_database(account_entry, project, key_object):
         )
 
 
-def remove_keys_from_database(account_entry, project_id, deleted_keys_uids):
+def remove_keys_from_database(
+    account_entry: Account, project_id: str, deleted_keys_uids: List[str]
+) -> None:
     """Removes deleted API keys from the data structure."""
     project_entry = next(
         (

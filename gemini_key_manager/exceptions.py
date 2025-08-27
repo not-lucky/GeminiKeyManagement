@@ -6,6 +6,8 @@ Defines domain-specific exceptions for:
 - API operation constraints
 """
 
+from __future__ import annotations
+
 
 class TermsOfServiceNotAcceptedError(Exception):
     """Indicates unaccepted Terms of Service for critical API operations.
@@ -15,7 +17,7 @@ class TermsOfServiceNotAcceptedError(Exception):
         url (str): URL for Terms of Service acceptance portal
     """
 
-    def __init__(self, message, url):
+    def __init__(self, message: str, url: str) -> None:
         self.message = message
         self.url = url
         super().__init__(self.message)

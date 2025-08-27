@@ -10,5 +10,5 @@ dependencies = [
     "google-cloud-resource-manager>=1.14.2",
     "google-cloud-service-usage>=1.13.1",
     "jsonschema>=4.25.1",
-    "colorama>=0.4.6",
+    "colorama>=0.4.6"
 ]

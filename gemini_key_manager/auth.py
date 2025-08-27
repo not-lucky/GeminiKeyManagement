@@ -6,10 +6,14 @@ Handles OAuth2 credential management including:
 - Credential storage/retrieval
 """
 
+from __future__ import annotations
+
 import os
 import json
 import logging
 import time
+from typing import Optional
+
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -18,7 +22,9 @@ from . import config
 logger = logging.getLogger(__name__)
 
 
-def get_and_refresh_credentials(email, max_retries=3, retry_delay=5):
+def get_and_refresh_credentials(
+    email: str, max_retries: int = 3, retry_delay: int = 5
+) -> Optional[Credentials]:
     """Manages credential lifecycle with automated refresh and retry.
 
     Args:
@@ -30,7 +36,7 @@ def get_and_refresh_credentials(email, max_retries=3, retry_delay=5):
         Credentials: Valid credentials or None if unrecoverable
     """
     token_file = os.path.join(config.CREDENTIALS_DIR, f"{email}.json")
-    creds = None
+    creds: Optional[Credentials] = None
     if os.path.exists(token_file):
         try:
             creds = Credentials.from_authorized_user_file(token_file, config.SCOPES)
@@ -69,7 +75,9 @@ def get_and_refresh_credentials(email, max_retries=3, retry_delay=5):
     return None
 
 
-def run_interactive_auth(email, max_retries=3, retry_delay=5):
+def run_interactive_auth(
+    email: str, max_retries: int = 3, retry_delay: int = 5
+) -> Optional[Credentials]:
     """Executes interactive OAuth2 flow with error handling.
 
     Args:
@@ -88,7 +96,7 @@ def run_interactive_auth(email, max_retries=3, retry_delay=5):
             flow = InstalledAppFlow.from_client_secrets_file(
                 config.CLIENT_SECRETS_FILE, config.SCOPES
             )
-            creds = flow.run_local_server(port=0)
+            creds: Credentials = flow.run_local_server(port=0)
             token_file = os.path.join(config.CREDENTIALS_DIR, f"{email}.json")
             with open(token_file, "w") as token:
                 token.write(creds.to_json())

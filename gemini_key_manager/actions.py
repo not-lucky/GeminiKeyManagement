@@ -7,40 +7,23 @@ This module handles:
 - Interactive Terms of Service acceptance workflows
 """
 
+from __future__ import annotations
+
 import logging
 import threading
 import concurrent.futures
 from datetime import datetime, timezone
+from typing import Any, Dict, List
+
 from google.api_core import exceptions as google_exceptions
 from google.cloud import resourcemanager_v3, api_keys_v2
+from google.oauth2.credentials import Credentials
+from google.cloud.resourcemanager_v3.types import Project as CloudProject
+from google.cloud.api_keys_v2.types import Key as CloudKey
+
 from . import config, gcp_api, database, utils
 from .exceptions import TermsOfServiceNotAcceptedError
-
-
-class TempKey:
-    """Mock key object compatible with database operations.
-
-    Provides a temporary representation of an API key for database insertion
-    when direct API key string retrieval is not possible.
-
-    Attributes:
-        key_string (str): The actual API key string
-        uid (str): Unique identifier of the key
-        name (str): Full resource name of the key
-        display_name (str): Human-readable display name
-        create_time (datetime): Key creation timestamp
-        update_time (datetime): Last update timestamp
-        restrictions (api_keys_v2.Restrictions): Key usage restrictions
-    """
-
-    def __init__(self, cloud_key, key_string):
-        self.key_string = key_string
-        self.uid = cloud_key.uid
-        self.name = cloud_key.name
-        self.display_name = cloud_key.display_name
-        self.create_time = cloud_key.create_time
-        self.update_time = cloud_key.update_time
-        self.restrictions = cloud_key.restrictions
+from .types import Account, Project as LocalProject, ApiKeysDatabase, TempKey
 
 
 class TosAcceptanceHelper:
@@ -55,18 +38,20 @@ class TosAcceptanceHelper:
         prompt_in_progress (bool): Indicates active prompt display status
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.lock = threading.Lock()
         self.prompted_event = threading.Event()
         self.prompt_in_progress = False
 
 
-def _enable_api_with_interactive_retry(project_id, creds, dry_run, tos_helper):
+def _enable_api_with_interactive_retry(
+    project_id: str, creds: Credentials, dry_run: bool, tos_helper: TosAcceptanceHelper
+) -> bool:
     """Attempts to enable API with retry logic for ToS acceptance.
 
     Args:
         project_id (str): Target GCP project ID
-        creds (Credentials: Authenticated Google credentials
+        creds (Credentials): Authenticated Google credentials
         dry_run (bool): Simulation mode flag
         tos_helper (TosAcceptanceHelper): ToS workflow coordinator
 
@@ -95,7 +80,13 @@ def _enable_api_with_interactive_retry(project_id, creds, dry_run, tos_helper):
             return False
 
 
-def reconcile_project_keys(project, creds, dry_run, db_lock, account_entry):
+def reconcile_project_keys(
+    project: CloudProject,
+    creds: Credentials,
+    dry_run: bool,
+    db_lock: threading.Lock,
+    account_entry: Account,
+) -> bool:
     """Reconciles cloud and local database API key states.
 
     Args:
@@ -108,7 +99,7 @@ def reconcile_project_keys(project, creds, dry_run, db_lock, account_entry):
     Returns:
         bool: True if Gemini key exists, False otherwise
     """
-    project_id = project.project_id
+    project_id: str = project.project_id
     logging.info(f"Reconciling keys for {project_id}")
     gemini_key_exists = False
 
@@ -116,7 +107,7 @@ def reconcile_project_keys(project, creds, dry_run, db_lock, account_entry):
         api_keys_client = api_keys_v2.ApiKeysClient(credentials=creds)
         parent = f"projects/{project_id}/locations/global"
 
-        cloud_keys_list = list(api_keys_client.list_keys(parent=parent))
+        cloud_keys_list: List[CloudKey] = list(api_keys_client.list_keys(parent=parent))
         for key in cloud_keys_list:
             if key.display_name in [
                 config.GEMINI_API_KEY_DISPLAY_NAME,
@@ -124,7 +115,7 @@ def reconcile_project_keys(project, creds, dry_run, db_lock, account_entry):
             ]:
                 gemini_key_exists = True
 
-        cloud_keys = {key.uid: key for key in cloud_keys_list}
+        cloud_keys: Dict[str, CloudKey] = {key.uid: key for key in cloud_keys_list}
 
         project_entry = next(
             (
@@ -136,7 +127,7 @@ def reconcile_project_keys(project, creds, dry_run, db_lock, account_entry):
         )
 
         if not project_entry:
-            project_entry = {
+            project_entry: LocalProject = {
                 "project_info": {
                     "project_id": project.project_id,
                     "project_name": project.display_name,
@@ -205,8 +196,13 @@ def reconcile_project_keys(project, creds, dry_run, db_lock, account_entry):
 
 
 def _create_and_process_new_project(
-    project_number, creds, dry_run, db_lock, account_entry, tos_helper
-):
+    project_number: str,
+    creds: Credentials,
+    dry_run: bool,
+    db_lock: threading.Lock,
+    account_entry: Account,
+    tos_helper: TosAcceptanceHelper,
+) -> None:
     """Creates and initializes new GCP project with API key.
 
     Args:
@@ -234,7 +230,7 @@ def _create_and_process_new_project(
         )
         operation = resource_manager.create_project(project=project_to_create)
         logging.info(f"Awaiting project creation: {display_name}")
-        created_project = operation.result()
+        created_project: CloudProject = operation.result()
         logging.info(f"Project created: {display_name}")
 
         if _enable_api_with_interactive_retry(project_id, creds, dry_run, tos_helper):
@@ -253,8 +249,14 @@ def _create_and_process_new_project(
 
 
 def process_project_for_action(
-    project, creds, action, dry_run, db_lock, account_entry, tos_helper
-):
+    project: CloudProject,
+    creds: Credentials,
+    action: str,
+    dry_run: bool,
+    db_lock: threading.Lock,
+    account_entry: Account,
+    tos_helper: TosAcceptanceHelper,
+) -> None:
     """Executes specified action on a single GCP project.
 
     Args:
@@ -266,7 +268,7 @@ def process_project_for_action(
         account_entry (dict): Account data structure
         tos_helper (TosAcceptanceHelper): ToS workflow coordinator
     """
-    project_id = project.project_id
+    project_id: str = project.project_id
     logging.info(f"Processing {project_id} ({project.display_name})")
 
     if action == "create":
@@ -294,8 +296,14 @@ def process_project_for_action(
 
 
 def process_account(
-    email, creds, action, api_keys_data, schema, dry_run=False, max_workers=5
-):
+    email: str,
+    creds: Credentials,
+    action: str,
+    api_keys_data: ApiKeysDatabase,
+    schema: Dict[str, Any],
+    dry_run: bool = False,
+    max_workers: int = 5,
+) -> None:
     """Orchestrates account-level key management operations.
 
     Args:
@@ -324,7 +332,7 @@ def process_account(
         None,
     )
     if not account_entry:
-        account_entry = {
+        account_entry: Account = {
             "account_details": {
                 "email": email,
                 "authentication_details": {
@@ -338,7 +346,9 @@ def process_account(
 
     try:
         resource_manager = resourcemanager_v3.ProjectsClient(credentials=creds)
-        existing_projects = list(resource_manager.search_projects())
+        existing_projects: List[CloudProject] = list(
+            resource_manager.search_projects()
+        )
 
         if not existing_projects and action == "create":
             logging.warning(f"No projects found for {email}")

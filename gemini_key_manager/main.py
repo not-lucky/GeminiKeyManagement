@@ -2,15 +2,21 @@
 Main entry point for the Gemini Key Management script.
 """
 
+from __future__ import annotations
+
 import argparse
 import logging
 import sys
 import os
 import concurrent.futures
+from typing import List, Dict
+
+from google.oauth2.credentials import Credentials
+
 from . import utils, config, auth, database, actions
 
 
-def main():
+def main() -> None:
     """Orchestrates API key lifecycle management workflow.
 
     Handles:
@@ -75,7 +81,7 @@ def main():
     schema = database.load_schema(config.API_KEYS_SCHEMA_FILE)
     api_keys_data = database.load_keys_database(config.API_KEYS_DATABASE_FILE, schema)
 
-    emails_to_process = []
+    emails_to_process: List[str] = []
     if args.email:
         emails_to_process.append(args.email)
     elif args.action == "delete":
@@ -89,8 +95,8 @@ def main():
             logging.info("No emails found in emails.txt. Exiting.")
             sys.exit(1)
 
-    creds_map = {}
-    emails_needing_interactive_auth = []
+    creds_map: Dict[str, Credentials] = {}
+    emails_needing_interactive_auth: List[str] = []
 
     logging.info("Checking credentials and refreshing tokens for all accounts...")
 

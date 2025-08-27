@@ -2,14 +2,22 @@
 Functions for interacting with Google Cloud Platform APIs.
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
+from typing import List, Optional
+
 from google.cloud import service_usage_v1, api_keys_v2
 from google.api_core import exceptions as google_exceptions
+from google.oauth2.credentials import Credentials
+
 from . import config, exceptions
 
 
-def enable_api(project_id, credentials, dry_run=False):
+def enable_api(
+    project_id: str, credentials: Credentials, dry_run: bool = False
+) -> bool:
     """Manages Generative Language API enablement with error handling.
 
     Args:
@@ -62,7 +70,9 @@ def enable_api(project_id, credentials, dry_run=False):
         return False
 
 
-def create_api_key(project_id, credentials, dry_run=False):
+def create_api_key(
+    project_id: str, credentials: Credentials, dry_run: bool = False
+) -> Optional[api_keys_v2.Key]:
     """Generates restricted API key with security constraints.
 
     Args:
@@ -121,9 +131,11 @@ def create_api_key(project_id, credentials, dry_run=False):
         return None
 
 
-def delete_api_keys(project_id, credentials, dry_run=False):
+def delete_api_keys(
+    project_id: str, credentials: Credentials, dry_run: bool = False
+) -> List[str]:
     """Deletes all API keys with the display name 'Gemini API Key' and returns their UIDs."""
-    deleted_keys_uids = []
+    deleted_keys_uids: List[str] = []
     try:
         api_keys_client = api_keys_v2.ApiKeysClient(credentials=credentials)
         parent = f"projects/{project_id}/locations/global"
